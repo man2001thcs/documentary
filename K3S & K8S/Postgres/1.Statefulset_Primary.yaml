@@ -1,0 +1,64 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres-primary
+  namespace: test-database
+spec:
+  serviceName: postgres-primary
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres-primary
+  template:
+    metadata:
+      labels:
+        app: postgres-primary
+    spec:
+      containers:
+      - name: postgres
+        image: man2001thcs/postgres-15:20240819
+        env:
+        - name: POSTGRES_USER
+          value: postgres
+        - name: POSTGRES_PASSWORD
+          value: "123456"
+        - name: POSTGRES_DB
+          value: postgres
+        - name: REPLICATOR_PASSWORD
+          value: "123456"
+        volumeMounts:
+        - name: postgres-primary-data
+          subPath: data
+          mountPath: /var/lib/postgresql/data
+        command:
+        - bash
+        - -c
+        - |
+          echo "REPLICATOR_PASSWORD environment variable is set. Proceeding with further processing."
+          echo "Password in SQL file updated successfully."
+
+          echo "Initializing database if needed..."
+          if [ ! -f /var/lib/postgresql/data/postgresql.conf ]; then
+            echo "Running initdb..."
+            initdb -D /var/lib/postgresql/data
+            echo "host replication replicator 0.0.0.0/0 md5" >> /var/lib/postgresql/data/pg_hba.conf
+            echo "host all postgres 0.0.0.0/0 md5" >> /var/lib/postgresql/data/pg_hba.conf
+            
+          fi
+
+          exec postgres 
+            -c wal_level=replica 
+            -c hot_standby=on 
+            -c max_wal_senders=10 
+            -c max_replication_slots=10 
+            -c wal_keep_size=5GB
+            -c max_slot_wal_keep_size=10GB
+            -c hot_standby_feedback=on
+  volumeClaimTemplates:
+  - metadata:
+      name: postgres-primary-data
+    spec:
+      accessModes: [ "ReadWriteMany" ]
+      resources:
+        requests:
+          storage: 10Gi

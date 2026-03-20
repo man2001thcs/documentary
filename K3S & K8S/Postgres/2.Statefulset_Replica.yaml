@@ -1,0 +1,201 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres-replica
+  namespace: test-database
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres-replica
+  template:
+    metadata:
+      labels:
+        app: postgres-replica
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: kubernetes.io/hostname
+                operator: In
+                values:
+                - eheatlthbvtmermapigw01101684131-db
+      containers:
+      - name: postgres-replica
+        image: man2001thcs/postgres-15:20240819
+        env:
+        - name: PGUSER
+          value: replicator
+        - name: PGPASSWORD
+          value: "123456"
+        volumeMounts:
+        - mountPath: /var/lib/postgresql/data
+          name: postgres-replica-data
+        command:
+        - bash
+        - -c
+        - |
+          if [ ! -f /var/lib/postgresql/data/postgresql.conf ]; then
+            initdb -D /var/lib/postgresql/data
+          fi
+
+          echo "host replication replicator 0.0.0.0/0 md5" >> /var/lib/postgresql/data/pg_hba.conf 
+
+          mkdir -p /var/lib/postgresql/temp_data
+          if pg_basebackup --pgdata=/var/lib/postgresql/temp_data -R --slot=replication_slot --host=10.168.4.131 --port=32020; then
+            echo 'Backup from primary done, moving data to final location...'
+            rm -rf /var/lib/postgresql/data/*
+            mv /var/lib/postgresql/temp_data/* /var/lib/postgresql/data/
+            rmdir /var/lib/postgresql/temp_data
+          fi
+          chmod 0700 /var/lib/postgresql/data
+          exec postgres
+      volumes:
+      - name: postgres-replica-data
+        persistentVolumeClaim:
+          claimName: postgres-replica-pvc
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres-replica
+  namespace: test-database
+spec:
+  serviceName: postgres-replica
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres-replica
+
+  template:
+    metadata:
+      labels:
+        app: postgres-replica
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: kubernetes.io/hostname
+                operator: In
+                values:
+                - eheatlthbvtmermapigw01101684131-db
+
+      containers:
+      - name: postgres-replica
+        image: man2001thcs/postgres-15:20240819
+
+        env:
+        - name: PGUSER
+          value: replicator
+        - name: PGPASSWORD
+          value: "123456"
+        - name: PRIMARY_DB_IP
+          value: "postgres-primary"
+        - name: PRIMARY_DB_PORT
+          value: "5432"
+        - name: HARD_RESET
+          value: false
+        volumeMounts:
+        - mountPath: /var/lib/postgresql/data
+          name: postgres-replica-data
+          subPath: data
+
+        command:
+        - bash
+        - -c
+        - |
+          DATA_DIR=/var/lib/postgresql/data
+          TEMP_DIR=/var/lib/postgresql/temp_data
+
+          check_replication() {
+            # Primary reachable
+            pg_isready -h $PRIMARY_DB_IP -p $PRIMARY_DB_PORT -U replicator >/dev/null 2>&1 || return 1
+
+            # Local postgres responding
+            psql -U postgres -tAc "SELECT 1" >/dev/null 2>&1 || return 1
+
+            # Still a replica
+            psql -U postgres -tAc "SELECT pg_is_in_recovery()" | grep -q t || return 1
+
+            # WAL streaming active
+            psql -U postgres -tAc "SELECT status FROM pg_stat_wal_receiver" | grep -q streaming || return 1
+
+            return 0
+          }
+
+          echo "HARD_RESET=$HARD_RESET"
+
+          NEED_REBUILD=false
+
+          # 1. HARD RESET
+          if [ "$HARD_RESET" = "true" ]; then
+            echo "HARD RESET ENABLED → force rebuild"
+            NEED_REBUILD=true
+
+          # 2. First time (no data)
+          elif [ ! -s "$DATA_DIR/PG_VERSION" ]; then
+            echo "No data found → initial basebackup"
+            NEED_REBUILD=true
+
+          # 3. Replica broken
+          elif ! check_replication; then
+            echo "Replication unhealthy → rebuilding replica"
+            NEED_REBUILD=true
+
+          else
+            echo "Replica healthy → skipping basebackup"
+          fi
+
+          if [ -s "$DATA_DIR/PG_VERSION" ] && [ "$HARD_RESET" = "false" ]; then
+            NEED_REBUILD=false
+          fi
+
+
+          # 🔥 Rebuild logic (ONLY when needed)
+          if [ "$NEED_REBUILD" = "true" ]; then
+            if [ ! -f /var/lib/postgresql/data/postgresql.conf ]; then
+              initdb -D /var/lib/postgresql/data
+            fi
+
+            echo "host replication replicator 0.0.0.0/0 md5" >> /var/lib/postgresql/data/pg_hba.conf
+            echo "host all postgres 0.0.0.0/0 md5" >> /var/lib/postgresql/data/pg_hba.conf
+            echo "Starting pg_basebackup..."
+
+            rm -rf $TEMP_DIR
+            mkdir -p $TEMP_DIR
+
+            if pg_basebackup \
+              --pgdata=$TEMP_DIR \
+              -R \
+              --slot=replication_slot \
+              --host=$PRIMARY_DB_IP \
+              --port=$PRIMARY_DB_PORT; then
+
+              echo "Backup done → replacing data directory"
+
+              rm -rf $DATA_DIR/*
+              mv $TEMP_DIR/* $DATA_DIR/
+              rmdir $TEMP_DIR
+            else
+              echo "Basebackup FAILED"
+              exit 1
+            fi
+          fi
+
+          chmod 0700 $DATA_DIR
+
+          exec postgres
+
+  volumeClaimTemplates:
+  - metadata:
+      name: postgres-replica-data
+    spec:
+      accessModes: [ "ReadWriteMany" ]
+      resources:
+        requests:
+          storage: 10Gi
