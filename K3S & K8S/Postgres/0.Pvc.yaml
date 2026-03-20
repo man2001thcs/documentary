@@ -1,0 +1,71 @@
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: postgres-db-pv-01
+spec:
+  capacity:
+    storage: 100Gi
+  accessModes:
+  - ReadWriteOnce
+  storageClassName: hishn-postgres-database-storage
+  persistentVolumeReclaimPolicy: Retain
+  local:
+    path: /opt/k8s-database/db-setup/Postgres/data/pv-01
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+      - matchExpressions:
+        - key: kubernetes.io/hostname
+          operator: In
+          values:
+          - eheatlthbvtmermapigw01101684131-db
+---
+
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: postgres-db-pv-02
+spec:
+  capacity:
+    storage: 100Gi
+  accessModes:
+  - ReadWriteOnce
+  storageClassName: hishn-postgres-database-storage
+  persistentVolumeReclaimPolicy: Retain
+  local:
+    path: /opt/k8s-database/db-setup/Postgres/data/pv-02
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+      - matchExpressions:
+        - key: kubernetes.io/hostname
+          operator: In
+          values:
+          - eheatlthbvtmermapigw01101684131-db
+---
+
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-primary-pvc
+  namespace: test-database
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 100Gi
+  storageClassName: hishn-postgres-database-storage
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-replica-pvc
+  namespace: test-database
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 100Gi
+  storageClassName: hishn-postgres-database-storage

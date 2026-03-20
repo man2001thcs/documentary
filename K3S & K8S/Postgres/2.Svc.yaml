@@ -1,0 +1,54 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-primary-np
+  namespace: test-database
+spec:
+  type: NodePort
+  ports:
+  - port: 5432
+    targetPort: 5432
+    nodePort: 32020
+  selector:
+    app: postgres-primary
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-replica-np
+  namespace: test-database
+spec:
+  type: NodePort
+  ports:
+  - port: 5432
+    targetPort: 5432
+    nodePort: 32030
+  selector:
+    app: postgres-replica
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-primary-cp
+  namespace: test-database
+spec:
+  type: NodePort
+  ports:
+  - port: 5432
+    targetPort: 5432
+  selector:
+    app: postgres-primary
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-replica-cp
+  namespace: test-database
+spec:
+  type: NodePort
+  ports:
+  - port: 5432
+    targetPort: 5432
+  selector:
+    app: postgres-replica

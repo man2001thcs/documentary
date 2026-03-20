@@ -1,0 +1,154 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres-primary
+  namespace: test-database
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres-primary
+  template:
+    metadata:
+      labels:
+        app: postgres-primary
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: kubernetes.io/hostname
+                operator: In
+                values:
+                - eheatlthbvtmermapigw01101684131-db
+      containers:
+      - name: postgres-primary
+        image: man2001thcs/postgres-15:20240819
+        env:
+        - name: POSTGRES_USER
+          value: postgres
+        - name: POSTGRES_DB
+          value: postgres
+        - name: POSTGRES_PASSWORD
+          value: "123456"
+        - name: POSTGRES_INITDB_ARGS
+          value: "--auth-host=scram-sha-256"
+        - name: REPLICATOR_PASSWORD
+          value: "123456"
+        - name: POSTGRES_HOST_AUTH_METHOD
+          value: "scram-sha-256 host\ 
+
+            replication all 0.0.0.0/0 md5"
+
+        volumeMounts:
+        - mountPath: /var/lib/postgresql/data
+          name: postgres-primary-data
+        command:
+        - bash
+        - -c
+        - |
+          echo "REPLICATOR_PASSWORD environment variable is set. Proceeding with further processing."
+          echo "Password in SQL file updated successfully."
+
+          echo "Initializing database if needed..."
+          if [ ! -f /var/lib/postgresql/data/postgresql.conf ]; then
+            echo "Running initdb..."
+            initdb -D /var/lib/postgresql/data
+            echo "host replication replicator 0.0.0.0/0 md5" >> /var/lib/postgresql/data/pg_hba.conf
+            echo "host all postgres 10.168.4.131/32 md5" >> /var/lib/postgresql/data/pg_hba.conf
+            
+          fi
+
+          exec postgres 
+            -c wal_level=replica 
+            -c hot_standby=on 
+            -c max_wal_senders=10 
+            -c max_replication_slots=10 
+            -c hot_standby_feedback=on
+        livenessProbe:
+          exec:
+            command:
+            - pg_isready
+            - -U
+            - postgres
+            - --dbname=postgres
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          exec:
+            command:
+            - pg_isready
+            - -U
+            - postgres
+            - --dbname=postgres
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 5
+          failureThreshold: 3
+      volumes:
+      - name: postgres-primary-data
+        persistentVolumeClaim:
+          claimName: postgres-primary-pvc
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres-replica
+  namespace: test-database
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres-replica
+  template:
+    metadata:
+      labels:
+        app: postgres-replica
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: kubernetes.io/hostname
+                operator: In
+                values:
+                - eheatlthbvtmermapigw01101684131-db
+      containers:
+      - name: postgres-replica
+        image: man2001thcs/postgres-15:20240819
+        env:
+        - name: PGUSER
+          value: replicator
+        - name: PGPASSWORD
+          value: "123456"
+        volumeMounts:
+        - mountPath: /var/lib/postgresql/data
+          name: postgres-replica-data
+        command:
+        - bash
+        - -c
+        - |
+          if [ ! -f /var/lib/postgresql/data/postgresql.conf ]; then
+            initdb -D /var/lib/postgresql/data
+          fi
+
+          echo "host replication replicator 0.0.0.0/0 md5" >> /var/lib/postgresql/data/pg_hba.conf 
+
+          mkdir -p /var/lib/postgresql/temp_data
+          if pg_basebackup --pgdata=/var/lib/postgresql/temp_data -R --slot=replication_slot --host=10.168.4.131 --port=32020; then
+            echo 'Backup from primary done, moving data to final location...'
+            rm -rf /var/lib/postgresql/data/*
+            mv /var/lib/postgresql/temp_data/* /var/lib/postgresql/data/
+            rmdir /var/lib/postgresql/temp_data
+          fi
+          chmod 0700 /var/lib/postgresql/data
+          exec postgres
+
+      volumes:
+      - name: postgres-replica-data
+        persistentVolumeClaim:
+          claimName: postgres-replica-pvc
