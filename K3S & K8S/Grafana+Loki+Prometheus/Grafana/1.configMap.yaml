@@ -1,0 +1,35 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-datasource
+  namespace: monitoring-stuff
+data:
+  ds.yaml: |
+    apiVersion: 1
+    datasources:
+      - name: Loki
+        type: loki
+        access: proxy
+        orgId: 1
+        url: http://10.168.4.131:30110
+        basicAuth: false
+        isDefault: false
+        version: 1
+        editable: false
+      - name: Tempo
+        type: tempo
+        access: proxy
+        orgId: 1
+        url: http://10.168.4.131:30160
+        basicAuth: false
+        isDefault: false
+        version: 1
+      - name: Prometheus
+        type: prometheus
+        access: proxy
+        orgId: 1
+        url: http://10.168.4.131:30150
+        basicAuth: false
+        isDefault: true
+        version: 1
+        editable: false

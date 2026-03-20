@@ -1,0 +1,39 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: otel-collector
+  namespace: monitoring-stuff
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: otel-collector
+  template:
+    metadata:
+      labels:
+        app: otel-collector
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: kubernetes.io/hostname # This is the key for node names
+                operator: In
+                values:
+                - eheatlthbvtmermapigw01101686214
+      containers:
+      - name: otel-collector
+        image: otel/opentelemetry-collector-contrib:latest
+        args:
+        - "--config=/etc/otel/config.yaml"
+        ports:
+        - containerPort: 4317 # grpc
+        - containerPort: 4318 # http
+        volumeMounts:
+        - name: otel-config
+          mountPath: /etc/otel
+      volumes:
+      - name: otel-config
+        configMap:
+          name: otel-config

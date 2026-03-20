@@ -1,0 +1,88 @@
+FROM ubuntu:22.04
+
+# Avoid tzdata interactive prompt
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install system deps
+RUN apt-get update && apt-get install -y \
+    curl wget unzip git make gcc g++ python3 python3-pip \
+    libaio1 libnsl2 \
+    postgresql-client \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy Oracle Instant Client
+COPY instantclient_23_9 /opt/oracle/instantclient_23_9
+
+# Set Oracle environment variables
+ENV LD_LIBRARY_PATH=/opt/oracle/instantclient_23_9:$LD_LIBRARY_PATH \
+    PATH=/opt/oracle/instantclient_23_9:$PATH \
+    TNS_ADMIN=/opt/oracle/instantclient_23_9/network/admin
+
+RUN mkdir -p $TNS_ADMIN
+
+# Install Node.js (v18 LTS)
+RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y nodejs \
+    && apt-get clean
+
+# # Download and extract n8n binary
+# WORKDIR /app
+# RUN wget https://codeload.github.com/n8n-io/n8n/tar.gz/refs/tags/n8n%401.107.4 \
+#     && tar -xvzf n8n-n8n-1.107.4.tar.gz \
+#     && rm n8n-n8n-1.107.4.tar.gz
+
+# # Add n8n binary to PATH
+# ENV PATH="/app/n8n-n8n-1.107.4/bin:$PATH"
+
+RUN npm install n8n -g
+
+RUN wget https://dl.min.io/client/mc/release/linux-amd64/mc -O /usr/local/bin/mc \
+    && chmod +x /usr/local/bin/mc
+
+RUN mkdir /opt/backup
+RUN mkdir /opt/restore
+
+RUN mc alias set minio-emr https://storage-emr.vnpt.vn minio bWluaW8tZWhlYWx0aC1lbXI= --api S3v2
+
+RUN apt install pgloader -y
+
+RUN apt install -y vim nano net-tools curl telnet
+
+RUN npm install -g n8n-nodes-oracle
+
+RUN npm i n8n-nodes-oracle-database-parameterization -g
+
+RUN npm pack n8n-nodes-oracle-database-parameterization@latest --registry=https://registry.npmjs.org --quiet
+
+ENV N8N_CUSTOM_EXTENSIONS "/usr/local/lib/node_modules/n8n-nodes-oracle"
+
+# Expose default n8n port
+EXPOSE 5678
+
+# ---- Security hardening ----
+# Create non-root user "n8nuser" with UID 2000
+RUN useradd -m -u 2000 -s /bin/bash n8nuser \
+    && mkdir -p /root/.n8n \
+    && mkdir -p /home/n8nuser/.n8n \
+    && chmod 777 /home/n8nuser/.n8n \
+    && mkdir -p /home/n8nuser/.n8n/config \
+    && mkdir -p /home/n8nuser/.cache \
+    # && mkdir -p /n8nuser/.n8n \
+    && chown -R n8nuser:n8nuser /opt /home/n8nuser/.n8n /home/n8nuser/.n8n/config /home/n8nuser/.cache /usr/lib/node_modules /usr/local/bin/mc
+
+RUN chown -R n8nuser:n8nuser /usr/lib/node_modules/n8n
+
+RUN mkdir -p /opt/psql_history
+ENV PSQL_HISTORY=/opt/psql_history/.history
+RUN touch /opt/psql_history/.history
+RUN chmod 600 /opt/psql_history/.history
+RUN chown -R n8nuser:n8nuser /opt/psql_history
+
+RUN mkdir -p /home/n8nuser/.mc
+RUN chown -R n8nuser:n8nuser /home/n8nuser/.mc
+
+# Switch to non-root user
+USER 2000:2000
+
+# Start n8n
+CMD ["n8n", "start"]

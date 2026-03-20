@@ -1,0 +1,11 @@
+FROM man2001thcs/n8n:20251002
+# Switch to non-root user
+USER root
+
+RUN npm pack n8n-nodes-oracle-database-parameterization@latest --registry=https://registry.npmjs.org --quiet
+
+# Switch to non-root user
+USER 2000:2000
+
+# Start n8n
+CMD ["n8n", "start"]

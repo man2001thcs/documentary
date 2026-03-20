@@ -1,0 +1,38 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tempo
+  labels:
+    app: tempo
+  namespace: monitoring-stuff
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: tempo
+  template:
+    metadata:
+      labels:
+        app: tempo
+    spec:
+      containers:
+      - name: tempo
+        image: grafana/tempo:2.4.1
+        args: [ "-config.file=/etc/tempo/tempo.yaml" ]
+        ports:
+        - containerPort: 3200 # HTTP query frontend
+        - containerPort: 4317 # OTLP gRPC receiver (optional)
+        - containerPort: 4318 # OTLP HTTP receiver (optional)
+        volumeMounts:
+        - name: config
+          mountPath: /etc/tempo
+          readOnly: true
+        - name: tempo-storage
+          mountPath: /tmp/tempo # adjust to match your config
+      volumes:
+      - name: config
+        configMap:
+          name: tempo-config
+      - name: tempo-storage
+        persistentVolumeClaim:
+          claimName: tempo-data

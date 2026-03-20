@@ -1,0 +1,54 @@
+version: "3.8"
+
+services:
+  n8n:
+    image: man2001thcs/n8n-db-tool:mysql
+    container_name: n8n
+    ports:
+      - "5678:5678"
+    environment:
+      GENERIC_TIMEZONE: "Asia/Ho_Chi_Minh"
+      TZ: "Asia/Ho_Chi_Minh"
+      N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS: "true"
+      N8N_RUNNERS_ENABLED: "true"
+      N8N_USER_FOLDER: /home/n8nuser
+      N8N_SECURE_COOKIE: true
+    volumes:
+      # - ./n8n_data:/home/n8nuser/.n8n
+      # tmpfs mounts for writable dirs
+      - ./n8n_user_data:/home/n8nuser/.n8n
+      - ./n8n_user_cache:/home/n8nuser/.cache
+      - ./n8n_mc:/home/n8nuser/.mc
+      - ./n8n_npm:/home/n8nuser/.npm
+      - ./n8n_psql:/opt/psql_history
+      - ./n8n_backup:/opt/backup
+      - type: tmpfs
+        target: /tmp
+      - type: tmpfs
+        target: /var/run
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    read_only: true             # root filesystem is read-only
+    user: "2000:2000"           # non-root UID:GID
+    tmpfs:                      # needed because rootfs is read-only
+      - /tmp
+      - /var/run
+
+  mysql:
+    image: mysql:8.0
+    container_name: mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: Kaka@1234
+      MYSQL_DATABASE: admin
+      MYSQL_USER: admin
+      MYSQL_PASSWORD: Kaka@1234
+    ports:
+      - "3306:3306"
+    volumes:
+      - ./mysql_data:/var/lib/mysql
+
+volumes:
+  n8n_data:
+    driver: local

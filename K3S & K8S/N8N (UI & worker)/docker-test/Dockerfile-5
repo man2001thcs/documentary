@@ -1,0 +1,39 @@
+FROM man2001thcs/n8n:20250829
+
+# Switch to root for installing system packages
+USER root
+
+# Install cron and process tools
+RUN apt-get update && apt-get install -y cron procps && rm -rf /var/lib/apt/lists/*
+
+# Create cleanup script
+RUN mkdir -p /usr/local/bin
+
+RUN echo '#!/bin/bash' > /usr/local/bin/cleanup_mc_jobs.sh && \
+    echo 'echo "$(date): Killing all mc_job, mc_cp, and mc_ls processes..."' >> /usr/local/bin/cleanup_mc_jobs.sh && \
+    echo 'for pattern in "mc_job" "mc_cp" "mc_ls"; do' >> /usr/local/bin/cleanup_mc_jobs.sh && \
+    echo '  pids=$(ps -ef | grep "$pattern" | grep -v grep | awk "{print \\$2}")' >> /usr/local/bin/cleanup_mc_jobs.sh && \
+    echo '  if [ -n "$pids" ]; then' >> /usr/local/bin/cleanup_mc_jobs.sh && \
+    echo '    echo "Killing processes for $pattern: $pids"' >> /usr/local/bin/cleanup_mc_jobs.sh && \
+    echo '    kill -9 $pids' >> /usr/local/bin/cleanup_mc_jobs.sh && \
+    echo '  else' >> /usr/local/bin/cleanup_mc_jobs.sh && \
+    echo '    echo "No running process found for $pattern"' >> /usr/local/bin/cleanup_mc_jobs.sh && \
+    echo '  fi' >> /usr/local/bin/cleanup_mc_jobs.sh && \
+    echo 'done' >> /usr/local/bin/cleanup_mc_jobs.sh && \
+    chmod +x /usr/local/bin/cleanup_mc_jobs.sh
+
+# Add cron job (runs daily at 06:00)
+RUN echo "0 6-17 * * * /usr/local/bin/cleanup_mc_jobs.sh >> /tmp/cleanup_mc_jobs.log 2>&1" > /etc/cron.d/cleanup_mc_jobs \
+    && chmod 0644 /etc/cron.d/cleanup_mc_jobs
+
+# Ensure cron logs go somewhere visible
+RUN touch /var/log/cleanup_mc_jobs.log
+
+# Create a startup script to run both cron and n8n
+RUN echo '#!/bin/bash\n\
+service cron start\n\
+echo "Cron started."\n\
+exec n8n start\n' > /start.sh && chmod +x /start.sh
+
+# Start n8n + cron together
+CMD ["/bin/bash", "/start.sh"]
