@@ -1,0 +1,22 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pv-helper
+  namespace: oracle-dg
+spec:
+  containers:
+  - name: busybox
+    image: busybox
+    command: [ "sleep", "3600" ]
+    volumeMounts:
+    - name: dg11-pvc
+      mountPath: /opt/oradata/dg11
+    - name: dg21-pvc
+      mountPath: /opt/oradata/dg21
+  volumes:
+  - name: dg11-pvc
+    persistentVolumeClaim:
+      claimName: dg11-storage-dg11-0
+  - name: dg21-pvc
+    persistentVolumeClaim:
+      claimName: dg21-storage-dg21-0

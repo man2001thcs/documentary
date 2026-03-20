@@ -1,0 +1,64 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: n8n-main
+  namespace: emr-cloud
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: n8n-main
+  template:
+    metadata:
+      labels:
+        app: n8n-main
+    spec:
+      containers:
+        - name: n8n-main
+          image: man2001thcs/n8n-db-tool:20251015
+
+          env:
+            - name: EXECUTIONS_MODE
+              value: queue
+
+            - name: QUEUE_BULL_REDIS_HOST
+              value: redis-service.emr-cloud.svc.cluster.local
+
+            - name: QUEUE_BULL_REDIS_PORT
+              value: "6379"
+            - name: WEBHOOK_URL 
+              value: https://n8n.local
+            - name: N8N_EDITOR_BASE_URL 
+              value: https://n8n.local
+            - name: DB_TYPE
+              value: postgresdb
+            - name: DB_POSTGRESDB_HOST
+              value: quick-postgres-service
+            - name: DB_POSTGRESDB_PORT
+              value: "5432"
+            - name: DB_POSTGRESDB_DATABASE
+              value: n8n
+            - name: DB_POSTGRESDB_USER
+              value: n8n
+            - name: DB_POSTGRESDB_PASSWORD
+              value: n8npassword
+
+            - name: N8N_ENCRYPTION_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: n8n-secret
+                  key: encryptionKey
+
+--- 
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: n8n-main-service
+  namespace: emr-cloud
+spec:
+  selector:
+    app: n8n-main
+  ports:
+    - port: 5678
+      targetPort: 5678

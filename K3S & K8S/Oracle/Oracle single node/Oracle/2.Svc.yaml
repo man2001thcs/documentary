@@ -1,0 +1,26 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: oracle-service-cp
+  namespace: hishn-database
+spec:
+  ports:
+  - port: 1521
+    targetPort: 1521
+  selector:
+    app: oracle-db-01
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: oracle-service-np
+  namespace: hishn-database
+spec:
+  type: NodePort
+  ports:
+  - port: 1521
+    targetPort: 1521
+    nodePort: 32040
+  selector:
+    app: oracle-db-01

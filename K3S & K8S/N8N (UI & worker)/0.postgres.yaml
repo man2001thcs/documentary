@@ -1,0 +1,82 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: quick-postgres-pvc
+  namespace: emr-cloud
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: longhorn-hdd
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: quick-postgres
+  namespace: emr-cloud
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: quick-postgres
+  template:
+    metadata:
+      labels:
+        app: quick-postgres
+    spec:
+      securityContext:
+        runAsUser: 999     # postgres user in official image
+        runAsGroup: 999    # postgres group
+        fsGroup: 999       # ensures volume permissions
+      # initContainers:
+      # - name: init-postgres-dir
+      #   image: busybox
+      #   command:
+      #     - sh
+      #     - -c
+      #     - |
+      #       mkdir -p /var/lib/postgresql/data
+      #   volumeMounts:
+      #     - name: postgres-data
+      #       mountPath: /var/lib/postgresql
+      containers:
+        - name: postgres
+          image: postgres:15
+          ports:
+            - containerPort: 5432
+          
+          env:
+            - name: POSTGRES_DB
+              value: n8n
+            - name: POSTGRES_USER
+              value: n8n
+            - name: POSTGRES_PASSWORD
+              value: n8npassword
+            - name: PGDATA
+              value: /var/lib/postgresql/data
+          volumeMounts:
+            - name: postgres-data
+              mountPath: /var/lib/postgresql/data   # mount PVC here, not /data
+              subPath: postgres
+          # command:
+          #   - "postgres"
+          #   - "-D"
+          #   - "/var/lib/postgresql/data"
+      volumes:
+        - name: postgres-data
+          persistentVolumeClaim:
+            claimName: quick-postgres-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: quick-postgres-service
+  namespace: emr-cloud
+spec:
+  selector:
+    app: quick-postgres
+  ports:
+    - port: 5432
+      targetPort: 5432

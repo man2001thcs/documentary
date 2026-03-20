@@ -1,0 +1,89 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: dg11
+  namespace: oracle-dg
+spec:
+  serviceName: "dg11" # must match the headless service
+  replicas: 1
+  selector:
+    matchLabels:
+      app: dg11
+  template:
+    metadata:
+      labels:
+        app: dg11
+    spec:
+      containers:
+      - name: dg11
+        image: man2001thcs/oracle-db:19.3.0-ee-dg
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 1521
+        env:
+        - name: CONTAINER_NAME
+          value: "DG11"
+        - name: DG_CONFIG
+          value: "DG1"
+        - name: DG_TARGET
+          value: "DG21"
+        - name: ORACLE_PDB
+          value: "DG11PDB1"
+        - name: ORACLE_PWD
+          value: "oracleVipPro123"
+        - name: ORACLE_SID
+          value: "DG11"
+        - name: DB_UNQNAME
+          value: "DG11"
+        - name: ROLE
+          value: "PRIMARY"
+        volumeMounts:
+        - mountPath: /opt/oracle/oradata
+          name: dg11-storage
+          subPath: oracle-dg11
+        - mountPath: /opt/oracle/scripts/tnsnames.ora
+          name: tnsnames-volume
+          subPath: tnsnames.ora
+      volumes:
+      # ✅ Move volumes here!
+      - name: tnsnames-volume
+        configMap:
+          name: tnsnames-config
+  volumeClaimTemplates:
+  - metadata:
+      name: dg11-storage
+    spec:
+      accessModes: [ "ReadWriteMany" ]
+      storageClassName: oracle-db-sc
+      resources:
+        requests:
+          storage: 70Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dg11
+  namespace: oracle-dg
+spec:
+  type: ClusterIP
+  selector:
+    app: dg11
+  ports:
+  - name: listener
+    port: 1521
+    targetPort: 1521
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dg11-np
+  namespace: oracle-dg
+spec:
+  type: NodePort
+  selector:
+    app: dg11
+  ports:
+  - name: listener
+    port: 1521
+    targetPort: 1521
+    nodePort: 32011

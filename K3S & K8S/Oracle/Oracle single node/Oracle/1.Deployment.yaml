@@ -1,0 +1,79 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: oracle-db-01
+  namespace: hishn-database
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: oracle-db-01
+  template:
+    metadata:
+      labels:
+        app: oracle-db-01
+    spec:
+      containers:
+      - name: oracle-db
+        image: man2001thcs/oracle-db:19.3.0-ee
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 1521
+          name: 1521tcp
+        - containerPort: 5500
+          name: 5500tcp
+        - containerPort: 2484
+          name: 2484tcp
+        env:
+        - name: ORACLE_SID
+          value: HISHN
+        - name: ORACLE_PDB
+          value: ORACLE_PDB1
+        - name: ORACLE_PWD
+          value: VNPT@1234
+        - name: ENABLE_ARCHIVELOG
+          value: "true"
+        - name: ENABLE_FORCE_LOGGING
+          value: "true"
+        - name: ENABLE_TCPS
+          value: "true"
+        resources:
+          requests:
+            cpu: "5"
+            memory: 10Gi
+          limits:
+            cpu: "20"
+            memory: 20Gi
+        volumeMounts:
+        - name: oracle-db-data
+          mountPath: /opt/oracle/oradata
+        # - name: oracle-tnsnames
+        #   mountPath: /opt/oracle/network/admin/tnsnames.ora
+        #   subPath: tnsnames.ora
+      volumes:
+      - name: oracle-db-data
+        persistentVolumeClaim:
+          claimName: oracle-db-pvc-01
+      # - name: oracle-tnsnames
+      #   configMap:
+      #     name: oracle-tnsnames-primary
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: kubernetes.io/hostname
+                operator: In
+                values:
+                - eheatlthbvtmermapigw01101684131-db
+      tolerations:
+      - key: node.kubernetes.io/not-ready
+        operator: Exists
+        effect: NoExecute
+        tolerationSeconds: 300
+      - key: node.kubernetes.io/unreachable
+        operator: Exists
+        effect: NoExecute
+        tolerationSeconds: 300
+      restartPolicy: Always
+      terminationGracePeriodSeconds: 30
