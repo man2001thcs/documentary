@@ -5,6 +5,8 @@
 
 > Hướng dẫn này phục vụ test & học hỏi là chính, không nên dùng trong production.
 
+> Bản k3s được gợi ý từ sample docker: https://github.com/oraclesean/dataguard-cn. Có thể vào đây vote sao cho tác giả.
+
 ## Bước 1: Tạo pv & pvc local trên node, dựa trên đường link file system và lock vào node cố định qua affinity.
 
 ``` yaml
@@ -133,3 +135,99 @@ ALTER TABLESPACE PRAISE_THE_BLOOD ADD DATAFILE '/opt/oracle/oradata/DG11/datafil
 ```
 
 Xong, sang FS của replica theo đường link tương tự /opt/oracle/oradata/DG11/datafile check xem file dược tạo chưa. Nếu tạo được thì setup thành công.
+
+
+``` sql
+# Chuyển sang plugged db
+ALTER SESSION SET CONTAINER=DG11PDB1;
+
+# Tạo user chisa
+create user chisa identified by "Chisathuathedeonaoduoc" default tablespace PRAISE_THE_BLOOD temporary tablespace temp;
+
+# Grant quyền tạo session cho chisa để truy cập được vào schema
+grant create session to chisa;
+
+GRANT CREATE ANY TABLE, CREATE ANY VIEW, CREATE ANY SEQUENCE, CREATE ANY PROCEDURE, CREATE ANY TRIGGER TO chisa;
+
+# Grant quyền sử dụng tablespace 
+ALTER USER chisa QUOTA UNLIMITED ON PRAISE_THE_BLOOD;
+
+# Tạo bảng
+CREATE TABLE employees (
+    employee_id NUMBER,
+    first_name VARCHAR2(50),
+    last_name VARCHAR2(50),
+    hire_date DATE
+);
+
+# Insert vài record
+INSERT INTO employees (employee_id, first_name, last_name, hire_date)
+VALUES (1, 'John', 'Doe', SYSDATE);
+
+INSERT INTO employees (employee_id, first_name, last_name, hire_date)
+VALUES (2, 'Jane', 'Smith', SYSDATE);
+
+INSERT INTO employees (employee_id, first_name, last_name, hire_date)
+VALUES (3, 'Mike', 'Johnson', SYSDATE);
+```
+
+rman target /
+
+# Inside RMAN prompt:
+DELETE NOPROMPT ARCHIVELOG ALL COMPLETED BEFORE 'SYSDATE-3';
+``` sql
+```
+
+### Switch over
+
+Step 1 — Ở PRIMARY DB, kiểm tra điều kiện:
+
+``` sql
+ALTER DATABASE SWITCHOVER TO STANDBY VERIFY;
+```
+
+Nếu OK, chuyển:
+
+``` sql
+ALTER DATABASE COMMIT TO SWITCHOVER TO STANDBY WITH SESSION SHUTDOWN;
+```
+
+Sau đó tắt & khởi động lại:
+
+``` sql
+SHUTDOWN IMMEDIATE;
+STARTUP MOUNT;
+```
+
+Step 2 — Ở STANDBY db, chuyển mode:
+
+``` sql
+ALTER DATABASE SWITCHOVER TO PRIMARY;
+```
+
+Sau đó mở db primary:
+
+``` sql
+ALTER DATABASE OPEN;
+ALTER SYSTEM SET log_archive_dest_2='service="dg11" ASYNC NOAFFIRM delay=0 optional compression=disable max_failure=0 reopen=300 db_unique_name="dg11" net_timeout=120 valid_for=(online_logfile,all_roles)' SCOPE=BOTH;
+```
+
+Trên standby mới:
+
+``` sql
+ALTER SYSTEM SET log_archive_dest_2=
+'service="dg21" ASYNC NOAFFIRM delay=0 optional compression=disable max_failure=0 reopen=300 db_unique_name="dg21"';
+```
+
+Trên standby mới, mở nhận redo log:
+
+(On the old primary)
+``` sql
+ALTER DATABASE RECOVER MANAGED STANDBY DATABASE DISCONNECT;
+```
+
+🔍 Kiểm tra lại trạng thái:
+
+``` sql
+SELECT DATABASE_ROLE, OPEN_MODE FROM V$DATABASE;
+```
