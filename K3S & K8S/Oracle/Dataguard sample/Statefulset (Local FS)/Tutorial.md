@@ -171,13 +171,6 @@ INSERT INTO employees (employee_id, first_name, last_name, hire_date)
 VALUES (3, 'Mike', 'Johnson', SYSDATE);
 ```
 
-rman target /
-
-# Inside RMAN prompt:
-DELETE NOPROMPT ARCHIVELOG ALL COMPLETED BEFORE 'SYSDATE-3';
-``` sql
-```
-
 ### Switch over
 
 Step 1 — Ở PRIMARY DB, kiểm tra điều kiện:
