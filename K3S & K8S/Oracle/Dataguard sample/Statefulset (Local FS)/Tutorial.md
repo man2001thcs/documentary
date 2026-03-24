@@ -5,7 +5,7 @@
 
 > Hướng dẫn này phục vụ test & học hỏi là chính, không nên dùng trong production.
 
-> Bản k3s được gợi ý từ sample docker: https://github.com/oraclesean/dataguard-cn. Có thể vào đây vote sao cho tác giả.
+> Bản k3s, k8s được gợi ý từ sample docker: https://github.com/oraclesean/dataguard-cn. Có thể vào đây vote sao cho tác giả.
 
 ## Bước 1: Tạo pv & pvc local trên node, dựa trên đường link file system và lock vào node cố định qua affinity.
 
