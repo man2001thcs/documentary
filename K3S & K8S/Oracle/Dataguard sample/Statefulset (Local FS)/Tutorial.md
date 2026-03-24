@@ -171,7 +171,7 @@ INSERT INTO employees (employee_id, first_name, last_name, hire_date)
 VALUES (3, 'Mike', 'Johnson', SYSDATE);
 ```
 
-### Switch over
+### Switchover
 
 Step 1 — Ở PRIMARY DB, kiểm tra điều kiện:
 
@@ -210,7 +210,9 @@ Trên standby mới (DG11):
 
 ``` sql
 ALTER SYSTEM SET log_archive_dest_2='service="dg21" ASYNC NOAFFIRM delay=0 optional compression=disable max_failure=0 reopen=300 db_unique_name="dg21" net_timeout=120 valid_for=(online_logfile,all_roles)' SCOPE=BOTH;
+ALTER SYSTEM SET FAL_SERVER='DG21' SCOPE=BOTH;
 alter pluggable database dg11pdb1 open read only;
+
 ```
 
 Trên standby mới, mở nhận redo log:
@@ -227,3 +229,17 @@ SELECT DATABASE_ROLE, OPEN_MODE FROM V$DATABASE;
 ```
 
 Tắt 2 db theo thứ tự Standby -> Primary, đổi biến môi trường ROLE trong statefulset của 2 statefulset DG11, DG21 sang cho nhau, rồi khởi động lại theo thứ tự Primary -> Standby.
+
+### Failover
+
+Dừng apply redo log:
+
+```sql
+ALTER DATABASE RECOVER MANAGED STANDBY DATABASE CANCEL;
+```
+
+Active standby:
+
+```sql
+ALTER DATABASE ACTIVATE STANDBY DATABASE;
+```
