@@ -176,13 +176,13 @@ VALUES (3, 'Mike', 'Johnson', SYSDATE);
 Step 1 — Ở PRIMARY DB, kiểm tra điều kiện:
 
 ``` sql
-ALTER DATABASE SWITCHOVER TO STANDBY VERIFY;
+ALTER DATABASE SWITCHOVER TO DG21 VERIFY;
 ```
 
 Nếu OK, chuyển:
 
 ``` sql
-ALTER DATABASE COMMIT TO SWITCHOVER TO STANDBY WITH SESSION SHUTDOWN;
+ALTER DATABASE COMMIT TO SWITCHOVER TO PHYSICAL STANDBY WITH SESSION SHUTDOWN;
 ```
 
 Sau đó tắt & khởi động lại:
@@ -195,21 +195,22 @@ STARTUP MOUNT;
 Step 2 — Ở STANDBY db, chuyển mode:
 
 ``` sql
-ALTER DATABASE SWITCHOVER TO PRIMARY;
+ALTER DATABASE COMMIT TO SWITCHOVER TO PRIMARY WITH SESSION SHUTDOWN;
 ```
 
-Sau đó mở db primary:
+Sau đó mở db primary mới (DG21):
 
 ``` sql
 ALTER DATABASE OPEN;
 ALTER SYSTEM SET log_archive_dest_2='service="dg11" ASYNC NOAFFIRM delay=0 optional compression=disable max_failure=0 reopen=300 db_unique_name="dg11" net_timeout=120 valid_for=(online_logfile,all_roles)' SCOPE=BOTH;
+alter pluggable database all open;
 ```
 
-Trên standby mới:
+Trên standby mới (DG11):
 
 ``` sql
-ALTER SYSTEM SET log_archive_dest_2=
-'service="dg21" ASYNC NOAFFIRM delay=0 optional compression=disable max_failure=0 reopen=300 db_unique_name="dg21"';
+ALTER SYSTEM SET log_archive_dest_2='service="dg21" ASYNC NOAFFIRM delay=0 optional compression=disable max_failure=0 reopen=300 db_unique_name="dg21" net_timeout=120 valid_for=(online_logfile,all_roles)' SCOPE=BOTH;
+alter pluggable database dg11pdb1 open read only;
 ```
 
 Trên standby mới, mở nhận redo log:
@@ -224,3 +225,5 @@ ALTER DATABASE RECOVER MANAGED STANDBY DATABASE DISCONNECT;
 ``` sql
 SELECT DATABASE_ROLE, OPEN_MODE FROM V$DATABASE;
 ```
+
+Tắt 2 db theo thứ tự Standby -> Primary, đổi biến môi trường ROLE trong statefulset của 2 statefulset DG11, DG21 sang cho nhau, rồi khởi động lại theo thứ tự Primary -> Standby.
