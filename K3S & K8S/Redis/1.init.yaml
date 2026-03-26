@@ -1,0 +1,21 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: redis-config
+  namespace: redis-set
+data:
+  setup.sh: |
+    # Get the pod index using sed (standard across all shells)
+    ordinal=$(hostname | sed 's/.*-\([0-9]\+\)$/\1/')
+
+    # Create a fresh config file
+    echo "protected-mode no" > /mnt/conf/redis.conf
+    echo "port 6379" >> /mnt/conf/redis.conf
+
+    if [ "$ordinal" = "0" ]; then
+      echo "Acting as Master"
+    else
+      echo "Acting as Replica of redis-0"
+      # Using the full headless service DNS name
+      echo "replicaof redis-0.redis.redis-set.svc.cluster.local 6379" >> /mnt/conf/redis.conf
+    fi

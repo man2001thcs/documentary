@@ -1,0 +1,57 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: redis
+  namespace: redis-set
+spec:
+  selector:
+    matchLabels:
+      app: redis
+  serviceName: "redis"
+  replicas: 3
+  template:
+    metadata:
+      labels:
+        app: redis
+    spec:
+      initContainers:
+      - name: config-init
+        image: busybox
+        # ADDED: Required by Kyverno
+        securityContext:
+          readOnlyRootFilesystem: true
+        command: [ 'sh', '/readonly-config/setup.sh' ]
+        volumeMounts:
+        - name: config-readonly
+          mountPath: /readonly-config
+        - name: config-writable
+          mountPath: /mnt/conf
+      containers:
+      - name: redis
+        image: redis:7.0-alpine
+        # ADDED: Required by Kyverno
+        securityContext:
+          readOnlyRootFilesystem: true
+        command: [ "redis-server", "/etc/redis/redis.conf" ]
+        ports:
+        - containerPort: 6379
+        volumeMounts:
+        - name: redis-data
+          mountPath: /data
+        - name: config-writable
+          mountPath: /etc/redis
+      volumes:
+      - name: config-readonly
+        configMap:
+          name: redis-config
+      - name: config-writable
+        emptyDir: {}
+  volumeClaimTemplates:
+  - metadata:
+      name: redis-data
+    spec:
+      accessModes: [ "ReadWriteOnce" ]
+      storageClassName: "longhorn-hdd"
+      resources:
+        requests:
+          storage: 5Gi
