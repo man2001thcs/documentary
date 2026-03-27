@@ -1,0 +1,32 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pv-helper
+  namespace: kafka-set
+spec:
+  containers:
+  - name: busybox
+    image: busybox
+    command: [ "sleep", "3600" ]
+    volumeMounts:
+    - name: pv-00
+      mountPath: /opt/pv-00
+    - name: pv-01
+      mountPath: /opt/pv-01
+    - name: pv-02
+      mountPath: /opt/pv-02
+    # - name: pv-02
+    #   mountPath: /opt/pv-02
+  volumes:
+  - name: pv-00
+    persistentVolumeClaim:
+      claimName: data-kafka-0
+  - name: pv-01
+    persistentVolumeClaim:
+      claimName: data-kafka-1
+  - name: pv-02
+    persistentVolumeClaim:
+      claimName: data-kafka-2
+  # - name: pv-02
+  #   persistentVolumeClaim:
+  #     claimName: postgres-02-pvc

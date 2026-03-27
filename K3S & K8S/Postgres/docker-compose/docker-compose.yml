@@ -1,0 +1,56 @@
+version: '3.8'
+services:
+  postgres_01:
+    container_name: postgres_01
+    image: man2001thcs/postgres-15:pp
+    user: postgres
+    restart: "on-failure"
+    ports:
+      - 5432:5432
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_DB: postgres
+      POSTGRES_PASSWORD: 123456
+      POSTGRES_HOST_AUTH_METHOD: "scram-sha-256\nhost replication all 0.0.0.0/0 md5"
+      POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256"
+      REPLICATOR_PASSWORD: 123456
+      PG_ROLE: PRIMARY
+      HARD_RESET: false
+    volumes:
+      - master_data:/var/lib/postgresql/data
+    networks:
+      - bridge-docker
+
+  postgres_02:
+    container_name: postgres_02
+    image: man2001thcs/postgres-15:pp
+    user: postgres
+    restart: "on-failure"
+    ports:
+      - 5433:5432
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_DB: postgres
+      POSTGRES_PASSWORD: 123456
+      PRIMARY_DB_PORT: 5432
+
+      PGUSER: replicator
+      PGPASSWORD: 123456
+      PG_ROLE: REPLICA
+      PRIMARY_DB_IP: "postgres_01"
+      HARD_RESET: false
+    volumes:
+      - slave_data:/var/lib/postgresql/data
+    depends_on:
+      - postgres_01
+    networks:
+      - bridge-docker
+
+volumes:
+  master_data:
+  slave_data:
+
+networks:
+  bridge-docker:
+    external:
+      name: bridge-docker

@@ -1,18 +1,4 @@
-#!/bin/bash
-
-# Set the path to your SQL file
-SQL_FILE="./docker-entrypoint-initdb.d/00_init.sql"
-
-if [ -n "$REPLICATOR_PASSWORD" ]; then
-    echo "$REPLICATOR_PASSWORD_ENV"
-    echo "REPLICATOR_PASSWORD environment variable is set. Proceeding with further processing."
-    sed -i "s/123456/${REPLICATOR_PASSWORD}/g" "$SQL_FILE"
-    echo "Password in SQL file updated successfully."
-else
-    echo "REPLICATOR_PASSWORD environment variable is not set. Deleting SQL file."
-    rm -f "$SQL_FILE"
-fi
-
+#!/usr/bin/env bash
 set -Eeo pipefail
 # TODO swap to -Eeuo pipefail above (after handling all potentially-unset variables)
 
@@ -117,24 +103,6 @@ docker_init_database_dir() {
 # print large warning if POSTGRES_HOST_AUTH_METHOD is set to 'trust'
 # assumes database is not set up, ie: [ -z "$DATABASE_ALREADY_EXISTS" ]
 docker_verify_minimum_env() {
-	case "${PG_MAJOR:-}" in
-		12 | 13) # https://github.com/postgres/postgres/commit/67a472d71c98c3d2fa322a1b4013080b20720b98
-			# check password first so we can output the warning before postgres
-			# messes it up
-			if [ "${#POSTGRES_PASSWORD}" -ge 100 ]; then
-				cat >&2 <<-'EOWARN'
-
-					WARNING: The supplied POSTGRES_PASSWORD is 100+ characters.
-
-					  This will not work if used via PGPASSWORD with "psql".
-
-					  https://www.postgresql.org/message-id/flat/E1Rqxp2-0004Qt-PL%40wrigleys.postgresql.org (BUG #6412)
-					  https://github.com/docker-library/postgres/issues/507
-
-				EOWARN
-			fi
-			;;
-	esac
 	if [ -z "$POSTGRES_PASSWORD" ] && [ 'trust' != "$POSTGRES_HOST_AUTH_METHOD" ]; then
 		# The - option suppresses leading tabs but *not* spaces. :)
 		cat >&2 <<-'EOE'
@@ -343,10 +311,56 @@ _main() {
 			docker_temp_server_start "$@"
 
 			docker_setup_db
+
+
+			# Set the path to your SQL file
+			SQL_FILE="./docker-entrypoint-initdb.d/00_init.sql"
+
+			if [ -n "$REPLICATOR_PASSWORD" ]; then
+			echo "$REPLICATOR_PASSWORD_ENV"
+			echo "REPLICATOR_PASSWORD environment variable is set. Proceeding with further processing."
+			sed -i "s/123456/${REPLICATOR_PASSWORD}/g" "$SQL_FILE"
+			echo "Password in SQL file updated successfully."
+			else
+			echo "REPLICATOR_PASSWORD environment variable is not set. Deleting SQL file."
+			rm -f "$SQL_FILE"
+			fi
+
 			docker_process_init_files /docker-entrypoint-initdb.d/*
 
 			docker_temp_server_stop
 			unset PGPASSWORD
+
+			if [ "$PG_ROLE" = "PRIMARY" ]; then
+				echo "host replication replicator 0.0.0.0/0 md5" >> /var/lib/postgresql/data/pg_hba.conf
+				echo "host all postgres 0.0.0.0/0 md5" >> /var/lib/postgresql/data/pg_hba.conf          
+			elif [ "$PG_ROLE" = "REPLICA" ]; then
+				echo "Running in REPLICA mode. Checking health..."
+        
+				DATA_DIR="$PGDATA"
+				TEMP_DIR="/var/lib/postgresql/temp_data"
+
+				# --- Your Custom Health Check Logic ---
+				
+				echo "Starting pg_basebackup from $PRIMARY_DB_IP..."
+				rm -rf "$TEMP_DIR" && mkdir -p "$TEMP_DIR"
+				
+				export PGPASSWORD="${REPLICATOR_PASSWORD}"
+				# Using -R to automatically create standby.signal and primary_conninfo
+				if  PGPASSWORD="${PGPASSWORD:-$POSTGRES_PASSWORD}" && pg_basebackup \
+					-d "postgres://replicator:${REPLICATOR_PASSWORD}@${PRIMARY_DB_IP}:${PRIMARY_DB_PORT:-5432}/postgres" \
+					--pgdata="$TEMP_DIR" \
+					-R \
+					--slot="${REPLICATION_SLOT_NAME:-replication_slot}"; then					
+					echo "Backup successful. Swapping data directories..."
+					rm -rf "$DATA_DIR"/*
+					cp -rT "$TEMP_DIR/" "$DATA_DIR/" # Using cp to avoid cross-device move issues
+					rm -rf "$TEMP_DIR"
+				else
+					echo "ERROR: pg_basebackup failed. Exiting."
+					exit 1
+				fi				
+			fi
 
 			cat <<-'EOM'
 
@@ -360,6 +374,105 @@ _main() {
 
 			EOM
 		fi
+
+		# Start db
+
+		if [ "$PG_ROLE" = "PRIMARY" ]; then
+			exec postgres \
+				-c wal_level=replica \
+				-c hot_standby=on \
+				-c max_wal_senders=10 \
+				-c max_replication_slots=10 \
+				-c wal_keep_size=5GB \
+				-c max_slot_wal_keep_size=10GB \
+				-c hot_standby_feedback=on
+
+		elif [ "$PG_ROLE" = "REPLICA" ]; then
+			DATA_DIR=/var/lib/postgresql/data
+			TEMP_DIR=/var/lib/postgresql/temp_data
+
+			check_replication() {
+				# Primary reachable
+				pg_isready -h $PRIMARY_DB_IP -p $PRIMARY_DB_PORT -U replicator >/dev/null 2>&1 || return 1
+
+				# Local postgres responding
+				psql -U postgres -tAc "SELECT 1" >/dev/null 2>&1 || return 1
+
+				# Still a replica
+				psql -U postgres -tAc "SELECT pg_is_in_recovery()" | grep -q t || return 1
+
+				# WAL streaming active
+				psql -U postgres -tAc "SELECT status FROM pg_stat_wal_receiver" | grep -q streaming || return 1
+
+				return 0
+			}
+
+			echo "HARD_RESET=$HARD_RESET"
+
+			NEED_REBUILD=false
+
+			# 1. HARD RESET
+			if [ "$HARD_RESET" = "true" ]; then
+				echo "HARD RESET ENABLED → force rebuild"
+				NEED_REBUILD=true
+
+			# 2. First time (no data)
+			elif [ ! -s "$DATA_DIR/PG_VERSION" ]; then
+				echo "No data found → initial basebackup"
+				NEED_REBUILD=true
+
+			# 3. Replica broken
+			elif ! check_replication; then
+				echo "Replication unhealthy → rebuilding replica"
+				NEED_REBUILD=true
+
+			else
+				echo "Replica healthy → skipping basebackup"
+			fi
+
+			if [ -s "$DATA_DIR/PG_VERSION" ] && [ "$HARD_RESET" = "false" ]; then
+				NEED_REBUILD=false
+			fi
+
+
+			# 🔥 Rebuild logic (ONLY when needed)
+			if [ "$NEED_REBUILD" = "true" ]; then
+				if [ ! -f /var/lib/postgresql/data/postgresql.conf ]; then
+				initdb -D /var/lib/postgresql/data
+				fi
+
+				echo "host replication replicator 0.0.0.0/0 md5" >> /var/lib/postgresql/data/pg_hba.conf
+				echo "host all postgres 0.0.0.0/0 md5" >> /var/lib/postgresql/data/pg_hba.conf
+				echo "Starting pg_basebackup..."
+
+				rm -rf $TEMP_DIR
+				mkdir -p $TEMP_DIR
+
+				export PGPASSWORD="${REPLICATOR_PASSWORD}"
+
+				if pg_basebackup \
+				--pgdata=$TEMP_DIR \
+				-R \
+				--slot=replication_slot \
+				--host=$PRIMARY_DB_IP \
+				--port=$PRIMARY_DB_PORT; then
+
+				echo "Backup done → replacing data directory"
+
+				rm -rf $DATA_DIR/*
+				mv $TEMP_DIR/* $DATA_DIR/
+				rmdir $TEMP_DIR
+				else
+				echo "Basebackup FAILED"
+				exit 1
+				fi
+			fi
+
+			chmod 0700 $DATA_DIR
+
+			exec postgres
+		fi
+		
 	fi
 
 	exec "$@"
@@ -368,5 +481,3 @@ _main() {
 if ! _is_sourced; then
 	_main "$@"
 fi
-
-

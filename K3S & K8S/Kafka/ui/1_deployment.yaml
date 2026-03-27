@@ -1,0 +1,46 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  namespace: kafka-set
+  name: kafka-ui
+  labels:
+    app: kafka-ui
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kafka-ui
+  template:
+    metadata:
+      labels:
+        app: kafka-ui
+    spec:
+      containers:
+      - name: kafka-ui
+        image: provectuslabs/kafka-ui:latest
+        ports:
+        - containerPort: 8080
+        env:
+        - name: KAFKA_CLUSTERS_0_NAME
+          value: "kafka-test-his"
+        - name: KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS
+          value: "kafka-client:9092"
+        - name: KAFKA_CLUSTERS_0_PROPERTIES_SECURITY_PROTOCOL
+          value: "PLAINTEXT"
+        # - name: KAFKA_CLUSTERS_0_PROPERTIES_SASL_MECHANISM
+        #   value: "PLAIN"
+        # - name: KAFKA_CLUSTERS_0_PROPERTIES_SASL_JAAS_CONFIG
+        #   value: 'org.apache.kafka.common.security.plain.PlainLoginModule required username="admin" password="VNPT@1234!";'
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kafka-ui-svc
+  namespace: kafka-set
+spec:
+  type: ClusterIP
+  ports:
+  - port: 8080
+    targetPort: 8080
+  selector:
+    app: kafka-ui
