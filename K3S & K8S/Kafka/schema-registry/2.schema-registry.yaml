@@ -1,0 +1,69 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: schema-registry
+  namespace: kafka-set
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: schema-registry
+  template:
+    metadata:
+      labels:
+        app: schema-registry
+    spec:
+      containers:
+      - name: schema-registry
+        image: confluentinc/cp-schema-registry:7.7.4
+        ports:
+        - containerPort: 32077
+        command:
+        - bash
+        - -c
+        - unset SCHEMA_REGISTRY_PORT; /etc/confluent/docker/run
+        env:
+        - name: SCHEMA_REGISTRY_HOST_NAME
+          value: 10.145.37.209
+        - name: SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS
+          value: "PLAINTEXT://kafka-0.kafka-headless.kafka-set.svc.cluster.local:9092,PLAINTEXT://kafka-1.kafka-headless.kafka-set.svc.cluster.local:9092PLAINTEXT://kafka-2.kafka-headless.kafka-set.svc.cluster.local:9092"
+        - name: SCHEMA_REGISTRY_LISTENERS
+          value: http://0.0.0.0:32077
+        - name: SCHEMA_REGISTRY_ADVERTISED_LISTENERS
+          value: http://10.168.4.131:32077
+        - name: CONFLUENT_SUPPORT_METRICS_ENABLE
+          value: "false"
+        - name: SCHEMA_REGISTRY_KAFKASTORE_SECURITY_PROTOCOL
+          value: "PLAINTEXT"
+        - name: SCHEMA_REGISTRY_KAFKASTORE_SASL_MECHANISM
+          value: "PLAIN"
+        # - name: SCHEMA_REGISTRY_KAFKASTORE_SASL_JAAS_CONFIG
+        #   value: 'org.apache.kafka.common.security.plain.PlainLoginModule required username="admin" password="VNPT@1234!";'
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: schema-registry
+  namespace: kafka-set
+spec:
+  ports:
+  - port: 32077
+    targetPort: 32077
+    name: http
+  selector:
+    app: schema-registry
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: schema-registry-np
+  namespace: kafka-set
+spec:
+  type: NodePort
+  ports:
+  - port: 32077
+    targetPort: 32077
+    nodePort: 32077
+    name: http
+  selector:
+    app: schema-registry

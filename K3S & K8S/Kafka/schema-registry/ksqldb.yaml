@@ -1,0 +1,105 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ksqldb-server
+  namespace: kafka-set
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ksqldb-server
+  template:
+    metadata:
+      labels:
+        app: ksqldb-server
+    spec:
+      containers:
+      - name: ksqldb-server
+        image: confluentinc/cp-ksqldb-server:7.7.4
+        ports:
+        - containerPort: 8088
+        env:
+        - name: KSQL_KSQL_SCHEMA_REGISTRY_URL
+          value: "http://10.145.37.209:32077"
+        - name: KSQL_LISTENERS
+          value: "http://0.0.0.0:8088"
+
+        - name: KSQL_BOOTSTRAP_SERVERS
+          value: "PLAINTEXT://kafka-0.kafka-headless.kafka-set.svc.cluster.local:9092,PLAINTEXT://kafka-1.kafka-headless.kafka-set.svc.cluster.local:9092PLAINTEXT://kafka-2.kafka-headless.kafka-set.svc.cluster.local:9092"
+        - name: KSQL_KSQL_STREAMS_BOOTSTRAP_SERVERS
+          value: "PLAINTEXT://kafka-0.kafka-headless.kafka-set.svc.cluster.local:9092,PLAINTEXT://kafka-1.kafka-headless.kafka-set.svc.cluster.local:9092PLAINTEXT://kafka-2.kafka-headless.kafka-set.svc.cluster.local:9092"
+
+        - name: KSQL_STREAMS_SECURITY_PROTOCOL
+          value: "PLAINTEXT"
+        - name: KSQL_STREAMS_SASL_MECHANISM
+          value: "PLAIN"
+
+        - name: KSQL_SECURITY_PROTOCOL
+          value: "PLAINTEXT"
+        - name: KSQL_SASL_MECHANISM
+          value: "PLAIN"
+
+        # - name: KSQL_BOOTSTRAP_SERVERS
+        #   value: "SASL_PLAINTEXT://10.168.4.131:32076"
+        # - name: KSQL_KSQL_STREAMS_BOOTSTRAP_SERVERS
+        #   value: "SASL_PLAINTEXT://10.168.4.131:32076"
+
+        # - name: KSQL_STREAMS_SECURITY_PROTOCOL
+        #   value: "SASL_PLAINTEXT"
+        # - name: KSQL_STREAMS_SASL_MECHANISM
+        #   value: "PLAIN"
+
+        # - name: KSQL_SECURITY_PROTOCOL
+        #   value: "SASL_PLAINTEXT"
+        # - name: KSQL_SASL_MECHANISM
+        #   value: "PLAIN"
+        # - name: KSQL_SASL_JAAS_CONFIG
+        #   value: 'org.apache.kafka.common.security.plain.PlainLoginModule required username="admin" password="VNPT@1234!";'
+
+        # - name: KSQL_STREAMS_SASL_JAAS_CONFIG
+        #   value: 'org.apache.kafka.common.security.plain.PlainLoginModule required username="admin" password="VNPT@1234!";'
+
+        - name: KSQL_KSQL_LOGGING_PROCESSING_STREAM_AUTO_CREATE
+          value: "true"
+        - name: KSQL_KSQL_LOGGING_PROCESSING_TOPIC_AUTO_CREATE
+          value: "true"
+        - name: KSQL_KSQL_SERVICE_ID
+          value: "default_ksql_service"
+        - name: CONFLUENT_SUPPORT_METRICS_ENABLE
+          value: "false"
+
+        - name: CONFLUENT_SUPPORT_METRICS_ENABLE
+          value: "false"
+
+        - name: KSQL_PRODUCER_RETRIES
+          value: "10"
+        - name: KSQL_PRODUCER_DELIVERY_TIMEOUT_MS
+          value: "120000" # 2 phút
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ksqldb-server
+  namespace: kafka-set
+spec:
+  ports:
+  - port: 8088
+    targetPort: 8088
+    name: http
+  selector:
+    app: ksqldb-server
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ksqldb-server-np
+  namespace: kafka-set
+spec:
+  type: NodePort
+  ports:
+  - port: 8088
+    targetPort: 8088
+    nodePort: 32078
+    name: http
+  selector:
+    app: ksqldb-server

@@ -1,0 +1,25 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ksqldb-cli
+  namespace: kafka-set
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ksqldb-cli
+  template:
+    metadata:
+      labels:
+        app: ksqldb-cli
+    spec:
+      containers:
+      - name: ksqldb-cli
+        image: confluentinc/cp-ksqldb-cli:7.4.4
+        tty: true # giữ interactive shell
+        stdin: true # để attach được
+        command: [ "/bin/sh" ] # tương đương entrypoint: /bin/sh
+        # optional: môi trường nếu muốn connect ksqldb-server
+        env:
+        - name: KSQL_SERVER
+          value: "http://10.145.37.209:32078"
