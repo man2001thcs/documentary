@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+      <title>Gemini WebSocket Chat</title>
+
+      <script src="https://cdn.jsdelivr.net/npm/sockjs-client@1/dist/sockjs.min.js"></script>
+      <script src="https://cdn.jsdelivr.net/npm/stompjs/lib/stomp.min.js"></script>
+
+      <style>
+            body {
+                  font-family: Arial;
+                  margin: 20px;
+            }
+
+            #chat {
+                  border: 1px solid #ccc;
+                  height: 300px;
+                  overflow-y: auto;
+                  padding: 10px;
+                  margin-bottom: 10px;
+            }
+
+            .msg {
+                  margin: 5px 0;
+            }
+
+            .user {
+                  color: blue;
+            }
+
+            .bot {
+                  color: green;
+            }
+      </style>
+</head>
+
+<body>
+
+      <h2>Gemini Chat</h2>
+
+      <div id="chat"></div>
+
+      <input type="text" id="message" placeholder="Type message..." style="width: 80%;">
+      <button onclick="sendMessage()">Send</button>
+
+      <script>
+            let stompClient = null;
+
+            function connect() {
+                  const socket = new SockJS('http://localhost:8080/ws');
+                  stompClient = Stomp.over(socket);
+
+                  let currentBotMsg = "";
+                  stompClient.connect({}, function () {
+                        stompClient.subscribe('/topic/messages', function (msg) {
+                              const data = JSON.parse(msg.body);
+
+                              if (data.text === "[END]") {
+                                    currentBotMsg = "";
+                                    return;
+                              }
+
+                              currentBotMsg += data.text;
+
+                              updateLastBotMessage(currentBotMsg);
+                        });
+                  });
+            }
+
+            function sendMessage() {
+                  const input = document.getElementById("message");
+                  const text = input.value;
+
+                  if (!text) return;
+
+                  addMessage("You: " + text, "user");
+
+                  stompClient.send('/app/ws/chat', {}, JSON.stringify({
+                        sessionId: "123",
+                        text: text
+                  }));
+
+                  input.value = "";
+            }
+
+            function addMessage(text, type) {
+                  const chat = document.getElementById("chat");
+                  const div = document.createElement("div");
+
+                  div.className = "msg " + type;
+                  div.innerText = text;
+
+                  chat.appendChild(div);
+                  chat.scrollTop = chat.scrollHeight;
+            }
+
+            function log(text) {
+                  addMessage(text, "system");
+            }
+
+            function updateLastBotMessage(text) {
+                  let chat = document.getElementById("chat");
+
+                  let last = document.getElementById("bot-last");
+
+                  if (!last) {
+                        last = document.createElement("div");
+                        last.id = "bot-last";
+                        last.className = "msg bot";
+                        chat.appendChild(last);
+                  }
+
+                  last.innerText = "Bot: " + text;
+                  chat.scrollTop = chat.scrollHeight;
+            }
+
+            // auto connect
+            connect();
+      </script>
+
+</body>
+
+</html>
